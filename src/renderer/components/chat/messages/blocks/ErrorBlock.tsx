@@ -132,7 +132,7 @@ const MessageErrorInfo: React.FC<{
     }
     // Intentionally exclude `error` from deps — its identity changes per render
     // but the action input's scalar message/language fields are both stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [
     claudeCodeExitCategory,
     classification.category,

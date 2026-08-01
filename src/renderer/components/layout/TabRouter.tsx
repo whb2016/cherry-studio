@@ -34,7 +34,7 @@ interface TabRouterProps {
  */
 export const TabRouter = ({ tab, isActive, onUrlChange }: TabRouterProps) => {
   // Create independent router instance per tab (only once)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // oxlint-disable-next-line react/exhaustive-deps
   const router = useMemo(() => createTabRouter(tab.url), [tab.id])
 
   // External retargets update tab.url before an async route can replace the outgoing page.
