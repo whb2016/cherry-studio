@@ -83,7 +83,7 @@ const SettingsSearchBox = ({ onCollapse }: { onCollapse: () => void }) => {
     if (urlQuery === value.trim()) return
     setValue(urlQuery)
     setLiveQuery(urlQuery)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- URL changes, not local edits, own this synchronization.
   }, [urlQuery])
 
   // Window-global store: hide/unmount clears it; Activity show re-runs this
@@ -91,7 +91,7 @@ const SettingsSearchBox = ({ onCollapse }: { onCollapse: () => void }) => {
   useEffect(() => {
     setLiveQuery(value || undefined)
     return () => setLiveQuery(undefined)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- mount lifetime owns the window-global mirror.
   }, [])
 
   // Single leave funnel: only one navigation may leave per clear — the

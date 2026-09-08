@@ -65,7 +65,7 @@
           ],
           [
             "src/renderer/components/layout/AppShellTabBar.tsx",
-            581,
+            582,
             11,
             "react(no-clone-element)",
             "`React.cloneElement` should not be used."
@@ -270,7 +270,7 @@
         "diagnostics": [
           [
             "src/renderer/pages/settings/ModelSettings/ModelSettings.tsx",
-            35,
+            24,
             1,
             "cherry(page-boundaries)",
             "A page must not import another page (cross-page coupling). docs/references/architecture/renderer.md §7."
@@ -290,27 +290,13 @@
       "before": {
         "rules": ["react-hooks/exhaustive-deps"],
         "severity": "warning",
-        "count": 10
+        "count": 8
       },
       "after": {
         "rules": ["react-hooks(exhaustive-deps)"],
         "severity": "warning",
-        "count": 10,
+        "count": 8,
         "diagnostics": [
-          [
-            "src/renderer/components/composer/tools/components/KnowledgeBaseButton.tsx",
-            146,
-            6,
-            "react-hooks(exhaustive-deps)",
-            "React Hook useCallback has unnecessary dependency: language"
-          ],
-          [
-            "src/renderer/components/composer/variants/AgentComposer.tsx",
-            906,
-            7,
-            "react-hooks(exhaustive-deps)",
-            "React Hook useEffect has a missing dependency: 'actionsRef.current'"
-          ],
           [
             "src/renderer/components/composer/variants/shared/composerQuote.ts",
             39,
@@ -328,7 +314,7 @@
           [
             "src/renderer/components/resourceCatalog/selectors/ResourceSelectorShell.tsx",
             472,
-            11,
+            13,
             "react-hooks(exhaustive-deps)",
             "React Hook useCallback has a missing dependency: 'props'"
           ],
@@ -342,7 +328,7 @@
           [
             "src/renderer/components/resourceCatalog/selectors/ResourceSelectorShell.tsx",
             649,
-            9,
+            11,
             "react-hooks(exhaustive-deps)",
             "React Hook useCallback has a missing dependency: 'props'"
           ],
