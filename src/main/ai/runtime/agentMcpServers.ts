@@ -39,6 +39,11 @@ export interface AgentNotificationContext {
 export interface AgentMcpServer {
   name: string
   instance: McpServer
+  /**
+   * Session snapshot of the user config; undefined for built-in servers. Carries the
+   * per-server call policy (timeout / longRunning) that runtime clients must honor (#20266).
+   */
+  config?: McpServerEntity
 }
 
 /** Build the complete MCP server set exposed by an agent session, independent of runtime transport. */
@@ -63,7 +68,7 @@ export function buildAgentMcpServers(
       if (mcpServerSnapshots && !serverSnapshot) {
         throw new Error(`MCP server not found in request snapshot: ${mcpId}`)
       }
-      servers[mcpId] = { name: mcpId, instance: createMcpBridgeServer(mcpId, serverSnapshot) }
+      servers[mcpId] = { name: mcpId, instance: createMcpBridgeServer(mcpId, serverSnapshot), config: serverSnapshot }
     } catch (error) {
       logger.error(`Failed to create MCP bridge for ${mcpId}`, { error })
     }

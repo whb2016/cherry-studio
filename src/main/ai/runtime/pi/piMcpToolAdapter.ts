@@ -4,11 +4,13 @@ import { application } from '@application'
 import { mcpServerService } from '@data/services/McpServerService'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { loggerService } from '@logger'
+import { buildMcpCallOptions } from '@main/ai/mcp/mcpRequestOptions'
 import type { AgentMcpServer } from '@main/ai/runtime/agentMcpServers'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { CallToolResult, ContentBlock, Tool } from '@modelcontextprotocol/sdk/types.js'
 import { toCamelCase } from '@shared/ai/tools/mcpToolName'
+import type { McpServer as McpServerEntity } from '@shared/data/types/mcpServer'
 
 const logger = loggerService.withContext('PiMcpToolAdapter')
 type PiToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
@@ -61,7 +63,7 @@ export async function buildMcpToolDefinitions(servers: Record<string, AgentMcpSe
       await server.instance.connect(serverTransport)
       await client.connect(clientTransport)
       const result = await client.listTools()
-      const serverTools = result.tools.map((tool) => toPiToolDefinition(server.name, tool, client))
+      const serverTools = result.tools.map((tool) => toPiToolDefinition(server.name, tool, client, server.config))
       const existingNames = new Set(tools.map((tool) => tool.name))
       const serverNames = new Set<string>()
       for (const tool of serverTools) {
@@ -90,7 +92,12 @@ export async function buildMcpToolDefinitions(servers: Record<string, AgentMcpSe
   }
 }
 
-function toPiToolDefinition(serverName: string, tool: Tool, client: Client): PiMcpToolDefinition {
+function toPiToolDefinition(
+  serverName: string,
+  tool: Tool,
+  client: Client,
+  serverConfig?: McpServerEntity
+): PiMcpToolDefinition {
   return {
     name: buildPiMcpToolName(serverName, tool.name),
     label: tool.name,
@@ -101,7 +108,7 @@ function toPiToolDefinition(serverName: string, tool: Tool, client: Client): PiM
       const result = (await client.callTool(
         { name: tool.name, arguments: params as Record<string, unknown> },
         undefined,
-        { signal }
+        buildMcpCallOptions(serverConfig, signal)
       )) as CallToolResult
       if (result.isError) throw new Error(joinErrorText(result.content))
       return {

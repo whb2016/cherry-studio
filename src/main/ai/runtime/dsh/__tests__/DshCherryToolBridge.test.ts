@@ -5,6 +5,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { resolveDshRuntimeEntry } from '@cherrystudio/dsh-bridge'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
   CallToolRequestSchema,
@@ -12,6 +13,7 @@ import {
   ListToolsRequestSchema,
   type Tool
 } from '@modelcontextprotocol/sdk/types.js'
+import type { McpServer as McpServerEntity } from '@shared/data/types/mcpServer'
 import sharp from 'sharp'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -239,5 +241,69 @@ describe('DshCherryToolBridge', () => {
     await expect(bridge.callTool('mcp__server__run', {})).rejects.toThrow('tool failed')
     await expect(access(toolResultRoot)).rejects.toMatchObject({ code: 'ENOENT' })
     await bridge.close()
+  })
+
+  // The call options live client-side and never reach the wire, so the only observable
+  // seam is Client.prototype.callTool's third argument.
+  describe('per-server call options', () => {
+    const spyCallTool = () =>
+      vi.spyOn(Client.prototype, 'callTool').mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('forwards the configured timeout on calls without a signal', async () => {
+      const spy = spyCallTool()
+      const server = createServer([tool('run')], vi.fn())
+      const bridge = await buildDshCherryToolBridge(
+        { server: { name: 'server', instance: server, config: { timeout: 180 } as McpServerEntity } },
+        bridgeOptions()
+      )
+
+      await bridge.callTool('mcp__server__run', { value: 'x' })
+
+      const options = spy.mock.calls[0][2]
+      expect(options).toMatchObject({ timeout: 180_000, resetTimeoutOnProgress: false })
+      expect(options?.signal).toBeUndefined()
+      expect(options?.onprogress).toBeUndefined()
+      await bridge.close()
+    })
+
+    it('enables progress-based extension for long-running servers', async () => {
+      const spy = spyCallTool()
+      const server = createServer([tool('run')], vi.fn())
+      const bridge = await buildDshCherryToolBridge(
+        {
+          server: { name: 'server', instance: server, config: { timeout: 180, longRunning: true } as McpServerEntity }
+        },
+        bridgeOptions()
+      )
+
+      await bridge.callTool('mcp__server__run', { value: 'x' }, new AbortController().signal)
+
+      const options = spy.mock.calls[0][2]
+      expect(options).toMatchObject({
+        timeout: 180_000,
+        resetTimeoutOnProgress: true,
+        maxTotalTimeout: 10 * 60 * 1000
+      })
+      expect(options?.signal).toBeInstanceOf(AbortSignal)
+      expect(options?.onprogress).toBeTypeOf('function')
+      await bridge.close()
+    })
+
+    it('keeps the 60s default when the server carries no config', async () => {
+      const spy = spyCallTool()
+      const server = createServer([tool('run')], vi.fn())
+      const bridge = await buildDshCherryToolBridge({ server: { name: 'server', instance: server } }, bridgeOptions())
+
+      await bridge.callTool('mcp__server__run', { value: 'x' })
+
+      const options = spy.mock.calls[0][2]
+      expect(options).toMatchObject({ timeout: 60_000, resetTimeoutOnProgress: false })
+      expect(options?.maxTotalTimeout).toBeUndefined()
+      await bridge.close()
+    })
   })
 })

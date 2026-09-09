@@ -4,6 +4,7 @@ import { application } from '@application'
 import type { BridgeToolCallResult, BridgeToolDescriptor } from '@cherrystudio/dsh-bridge'
 import { mcpServerService } from '@data/services/McpServerService'
 import { loggerService } from '@logger'
+import { buildMcpCallOptions, type McpCallPolicy } from '@main/ai/mcp/mcpRequestOptions'
 import type { AgentMcpServer } from '@main/ai/runtime/agentMcpServers'
 import { listBuiltinToolPolicies } from '@main/ai/toolApproval/builtinToolPolicy'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -20,6 +21,8 @@ class DshCherryToolIdentityError extends Error {}
 interface DshToolBinding {
   client: Client
   rawName: string
+  /** Per-server call policy captured from the session snapshot; undefined for built-ins. */
+  policy: McpCallPolicy | undefined
 }
 
 export interface DshCherryToolBridge {
@@ -107,7 +110,7 @@ export async function buildDshCherryToolBridge(
       clients.push(client)
       for (const { descriptor, rawName } of serverTools) {
         tools.push(descriptor)
-        bindings.set(descriptor.name, { client, rawName })
+        bindings.set(descriptor.name, { client, rawName, policy: server.config })
       }
     } catch (error) {
       await client.close().catch(() => undefined)
@@ -127,7 +130,7 @@ export async function buildDshCherryToolBridge(
       const result = (await binding.client.callTool(
         { name: binding.rawName, arguments: toToolArguments(args) },
         undefined,
-        signal ? { signal } : undefined
+        buildMcpCallOptions(binding.policy, signal)
       )) as CallToolResult
       if (result.isError) throw new Error(dshToolResultErrorText(result.content, binding.rawName))
       const text = await projectDshToolResult(result.content, binding.rawName, {

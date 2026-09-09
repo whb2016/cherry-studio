@@ -44,8 +44,13 @@ export function buildMcpServers(
     selectedKnowledgeBaseIds,
     notificationContext
   )
+  // Whitelist name/instance: `config` (the raw McpServerEntity, env/headers included) must
+  // not leak into the SDK-facing server spec.
   return Object.fromEntries(
-    Object.entries(servers).map(([id, server]) => [id, { type: 'sdk', ...server } satisfies McpServerConfig])
+    Object.entries(servers).map(([id, server]) => [
+      id,
+      { type: 'sdk', name: server.name, instance: server.instance } satisfies McpServerConfig
+    ])
   )
 }
 
