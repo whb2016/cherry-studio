@@ -16,7 +16,7 @@ import { AGENT_SESSION_FLOW_PARTS_CACHE_KEY } from '@shared/ai/agentSessionFlowP
 import type { CursorPaginationResponse } from '@shared/data/api/types'
 import type { AgentSessionMessageEntity } from '@shared/data/types/agent'
 import type { CherryMessagePart, CherryUIMessage } from '@shared/data/types/message'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useConversationHistoryQuery } from './useConversationHistoryQuery'
 
@@ -78,7 +78,7 @@ export function useAgentSessionParts(sessionId: string, options: { enabled?: boo
   const enabled = !!sessionId && options.enabled !== false
   const fetchOnMount = options.fetchOnMount ?? enabled
   const sessionMessagesCachePath = `/agent-sessions/${sessionId}/messages` as const
-  const { pages, isLoading, hasNext, loadNext, mutate } = useConversationHistoryQuery(
+  const { pages, isLoading, isRefreshing, hasNext, loadNext, mutate } = useConversationHistoryQuery(
     '/agent-sessions/:sessionId/messages',
     {
       params: { sessionId },
@@ -231,6 +231,18 @@ export function useAgentSessionParts(sessionId: string, options: { enabled?: boo
     [mutate, sessionId]
   )
 
+  // Load-all mode (multi-select "select all"): auto-paginate to the oldest
+  // page — same pattern as `useTopics({ loadAll: true })`.
+  const [loadAllRequested, setLoadAllRequested] = useState(false)
+  useEffect(() => {
+    setLoadAllRequested(false)
+  }, [sessionId])
+  useEffect(() => {
+    if (enabled && loadAllRequested && hasNext && !isLoading && !isRefreshing) {
+      loadNext()
+    }
+  }, [enabled, loadAllRequested, hasNext, isLoading, isRefreshing, loadNext])
+
   const deleteMessage = useCallback(
     async (messageId: string): Promise<void> => {
       await deleteMessageTrigger({ params: { sessionId, messageId } })
@@ -243,6 +255,8 @@ export function useAgentSessionParts(sessionId: string, options: { enabled?: boo
     isLoading: enabled && isLoading,
     hasOlder: hasNext,
     loadOlder: loadNext,
+    loadAllOlder: () => setLoadAllRequested(true),
+    isLoadingAll: enabled && loadAllRequested && hasNext,
     refresh: refreshMessages,
     seedReservedMessages,
     deleteMessage

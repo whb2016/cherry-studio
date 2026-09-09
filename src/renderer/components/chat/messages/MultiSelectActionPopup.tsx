@@ -15,6 +15,7 @@ interface Props {
   isMultiSelectMode: boolean
   selectAllState?: SelectAllState
   selectAllDisabled?: boolean
+  isSelectAllLoading?: boolean
   onToggleSelectAll?: (checked: boolean) => void
   onSave?: () => void
   onCopy?: () => void
@@ -28,6 +29,7 @@ const MultiSelectActionPopup: FC<Props> = ({
   isMultiSelectMode,
   selectAllState,
   selectAllDisabled,
+  isSelectAllLoading,
   onToggleSelectAll,
   onSave,
   onCopy,
@@ -50,7 +52,7 @@ const MultiSelectActionPopup: FC<Props> = ({
             <Checkbox
               size="sm"
               checked={selectAllState}
-              disabled={selectAllDisabled}
+              disabled={selectAllDisabled || isSelectAllLoading}
               aria-label={t('common.select_all')}
               onCheckedChange={(checked) => onToggleSelectAll(Boolean(checked))}
             />

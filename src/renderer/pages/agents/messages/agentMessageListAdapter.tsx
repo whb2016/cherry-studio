@@ -96,6 +96,8 @@ interface AgentMessageListParams {
   isLoading: boolean
   hasOlder?: boolean
   loadOlder?: () => void
+  loadAllOlder?: () => void
+  isLoadingAll?: boolean
   openCitationsPanel?: MessageListActions['openCitationsPanel']
   openAgentToolFlow?: MessageListActions['openAgentToolFlow']
   openArtifactFile?: MessageListActions['openArtifactFile']
@@ -153,6 +155,8 @@ export function useAgentMessageListProviderValue({
   isLoading,
   hasOlder = false,
   loadOlder,
+  loadAllOlder,
+  isLoadingAll,
   openCitationsPanel,
   openAgentToolFlow,
   openArtifactFile,
@@ -261,7 +265,10 @@ export function useAgentMessageListProviderValue({
     streamingLayers: displayStreamingLayers,
     deleteMessage,
     diagnosticReport,
-    persistDiagnosis
+    persistDiagnosis,
+    hasOlder,
+    loadAllOlder,
+    isLoadingAll
   })
 
   const openPath = useCallback(

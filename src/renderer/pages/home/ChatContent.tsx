@@ -70,6 +70,8 @@ const ChatContent: FC<Props> = ({
     activeNodeId,
     loadOlder,
     hasOlder,
+    loadAllOlder,
+    isLoadingAll,
     mutate: messagesCacheMutate
   } = useTopicMessages(topic.id)
 
@@ -94,6 +96,8 @@ const ChatContent: FC<Props> = ({
       activeNodeId={activeNodeId}
       loadOlder={loadOlder}
       hasOlder={hasOlder}
+      loadAllOlder={loadAllOlder}
+      isLoadingAll={isLoadingAll}
       messagesCacheMutate={messagesCacheMutate}
     />
   )
@@ -116,6 +120,8 @@ interface InnerProps extends Props {
   activeNodeId: string | null
   loadOlder: () => void
   hasOlder: boolean
+  loadAllOlder: () => void
+  isLoadingAll: boolean
   messagesCacheMutate: ReturnType<typeof useTopicMessages>['mutate']
 }
 
@@ -139,6 +145,8 @@ const ChatContentInner: FC<InnerProps> = ({
   activeNodeId,
   loadOlder,
   hasOlder,
+  loadAllOlder,
+  isLoadingAll,
   messagesCacheMutate
 }) => {
   const { t } = useTranslation()
@@ -220,6 +228,8 @@ const ChatContentInner: FC<InnerProps> = ({
         isMessagesStale={isHistoryStale}
         loadOlder={loadOlder}
         hasOlder={hasOlder}
+        loadAllOlder={loadAllOlder}
+        isLoadingAll={isLoadingAll}
         openCitationsPanel={onOpenCitationsPanel}
         onStartBranchDraft={reserveBranch}
       />
