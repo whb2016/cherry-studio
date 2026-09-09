@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { cacheService } from '@data/CacheService'
@@ -47,39 +47,42 @@ export function useAutoBackupEvents(): void {
     }
   })
 
-  const notify = useEffectEvent((event: AutoBackupEvent) => {
-    const cacheKey = notificationCacheKey(event)
-    if ((event.status === 'warning' || event.status === 'failed') && !cacheService.hasCasual(cacheKey)) {
-      cacheService.setCasual(cacheKey, true, 24 * 60 * 60 * 1000) // 24 hours
-      if (event.status === 'warning') toast.warning(t('message.backup.cleanup_failed'))
-      else {
-        toast.error(
-          getLocalizedBackupErrorMessage(new Error(event.errorMessage), 'message.backup.failed', {
-            tlsCertificateHint: event.type === 'webdav'
-          })
-        )
+  const notify = useCallback(
+    (event: AutoBackupEvent) => {
+      const cacheKey = notificationCacheKey(event)
+      if ((event.status === 'warning' || event.status === 'failed') && !cacheService.hasCasual(cacheKey)) {
+        cacheService.setCasual(cacheKey, true, 24 * 60 * 60 * 1000) // 24 hours
+        if (event.status === 'warning') toast.warning(t('message.backup.cleanup_failed'))
+        else {
+          toast.error(
+            getLocalizedBackupErrorMessage(new Error(event.errorMessage), 'message.backup.failed', {
+              tlsCertificateHint: event.type === 'webdav'
+            })
+          )
+        }
+        void ipcApi
+          .request('backup.acknowledge_auto_sync_notification', { type: event.type, id: event.id })
+          .catch((error) => logger.error('Failed to acknowledge automatic backup notification', error as Error))
+      } else if (event.status === 'succeeded' && (event.type === 'webdav' || event.type === 's3')) {
+        void notificationService.send({
+          id: uuid(),
+          type: 'success',
+          title: t('common.success'),
+          message: t('message.backup.success'),
+          silent: false,
+          timestamp: event.timestamp,
+          source: 'backup'
+        })
       }
-      void ipcApi
-        .request('backup.acknowledge_auto_sync_notification', { type: event.type, id: event.id })
-        .catch((error) => logger.error('Failed to acknowledge automatic backup notification', error as Error))
-    } else if (event.status === 'succeeded' && (event.type === 'webdav' || event.type === 's3')) {
-      void notificationService.send({
-        id: uuid(),
-        type: 'success',
-        title: t('common.success'),
-        message: t('message.backup.success'),
-        silent: false,
-        timestamp: event.timestamp,
-        source: 'backup'
-      })
-    }
-  })
+    },
+    [t]
+  )
 
   useEffect(() => {
     events.forEach((event) => {
       if (event) applyState(event)
     })
-  }, [applyState, events])
+  }, [events])
 
   useIpcOn('backup.auto_sync_state_changed', notify)
 
