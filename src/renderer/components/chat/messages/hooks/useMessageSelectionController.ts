@@ -71,6 +71,9 @@ export function useMessageSelectionController({
 
   // Set while a select-all is waiting for load-all pagination to finish.
   const selectAllPendingRef = useRef(false)
+  // Messages the user unticked while a select-all was deferred — excluded when
+  // it finally lands, so a late load completion cannot revert their edits.
+  const manualDeselectedRef = useRef<Set<string>>(new Set())
 
   const toggleMultiSelectMode = useCallback(
     (enabled: boolean) => {
@@ -100,6 +103,12 @@ export function useMessageSelectionController({
       setSelectedMessageIds((prev) =>
         selected ? (prev.includes(messageId) ? [...prev] : [...prev, messageId]) : prev.filter((id) => id !== messageId)
       )
+      if (selectAllPendingRef.current) {
+        // Last action per message wins: untick excludes it from the deferred
+        // select-all; re-ticking puts it back.
+        if (selected) manualDeselectedRef.current.delete(messageId)
+        else manualDeselectedRef.current.add(messageId)
+      }
     },
     [setSelectedMessageIds]
   )
@@ -122,7 +131,8 @@ export function useMessageSelectionController({
   latestSelectableIdsRef.current = selectableIds
 
   const performSelectAll = useCallback(() => {
-    setSelectedMessageIds(latestSelectableIdsRef.current)
+    const deselected = manualDeselectedRef.current
+    setSelectedMessageIds(latestSelectableIdsRef.current.filter((id) => !deselected.has(id)))
   }, [setSelectedMessageIds])
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -153,6 +163,7 @@ export function useMessageSelectionController({
         // export empty content. Paginate to the end first; the completion
         // effect below applies the selection once every page is resident.
         selectAllPendingRef.current = true
+        manualDeselectedRef.current.clear()
         startLoadAll()
         return
       }
