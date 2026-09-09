@@ -231,6 +231,31 @@ jobs:
             exit 1
           fi
 
+  lint-plugin-windows-test:
+    runs-on: windows-2022
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    env:
+      CI: true
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".node-version"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Oxlint Plugin Test
+        run: pnpm exec vitest run --project scripts scripts/lint/__tests__/cherryPlugin.test.ts
+
   main-test-shard:
     name: main-test (${{ matrix.os }} ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ${{ matrix.os }}

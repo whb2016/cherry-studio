@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
+import crossSpawn from 'cross-spawn'
 import { describe, expect, it } from 'vitest'
 
 type OxlintDiagnostic = {
@@ -20,7 +20,7 @@ const fixtureRoot = path.join(repoRoot, 'scripts/lint/__fixtures__')
 
 describe('Cherry Studio Oxlint plugin fixtures', () => {
   it('accepts positive fixtures and snapshots every negative diagnostic', () => {
-    const result = spawnSync(
+    const result = crossSpawn.sync(
       path.join(repoRoot, 'node_modules/.bin/oxlint'),
       [
         '-c',

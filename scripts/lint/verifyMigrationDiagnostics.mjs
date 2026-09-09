@@ -1,10 +1,11 @@
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import crossSpawn from 'cross-spawn'
+
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const snapshot = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'migration-diagnostics.json'), 'utf8'))
-const result = spawnSync(
+const result = crossSpawn.sync(
   path.join(repoRoot, 'node_modules/.bin/oxlint'),
   ['-c', 'oxlint.config.ts', '--format', 'json', '--threads=1'],
   { cwd: repoRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }

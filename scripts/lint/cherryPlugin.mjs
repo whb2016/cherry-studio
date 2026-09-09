@@ -25,7 +25,11 @@ const importSource = (node) => {
 }
 
 const resolveRepoImport = (specifier, fromRelative) => {
-  const fromProcess = fromRelative.startsWith('src/main/') ? 'main' : 'renderer'
+  const fromProcess =
+    fromRelative.startsWith('src/main/') ||
+    fromRelative.startsWith('scripts/utility-process-smoke/harness/utilityEntries/')
+      ? 'main'
+      : 'renderer'
   let target
 
   if (specifier.startsWith('./') || specifier.startsWith('../')) {

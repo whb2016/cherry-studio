@@ -3,6 +3,13 @@
 exports[`Cherry Studio Oxlint plugin fixtures > accepts positive fixtures and snapshots every negative diagnostic 1`] = `
 [
   {
+    "file": "negative/scripts/utility-process-smoke/harness/utilityEntries/ForbiddenData.ts",
+    "line": 1,
+    "message": "Utility-process child code runs without the main process singletons. Use the child runtime and protocol layer instead; keep host-only code out of the entry graph.",
+    "rule": "cherry(utility-process-boundaries)",
+    "severity": "error",
+  },
+  {
     "file": "negative/src/main/Bad-Directory/bad-file.ts",
     "line": 1,
     "message": "Directory segment \`Bad-Directory\` must be camelCase under src/main.",
