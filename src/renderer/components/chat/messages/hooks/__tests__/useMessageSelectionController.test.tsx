@@ -480,6 +480,34 @@ describe('useMessageSelectionController', () => {
       expect(result.current.selection.selectAllState).toBe(true)
     })
 
+    it('resets exclusions on a fresh select-all once every page is loaded', () => {
+      const { result, handle, rerender } = renderPaginatedController([message('a')], { hasOlder: true })
+
+      act(() => {
+        result.current.actions.selectMessage?.('a', true)
+      })
+      act(() => {
+        result.current.actions.toggleSelectAllMessages?.(true)
+      })
+      rerender({ messages: [message('a')], pagination: { ...handle, isLoading: true } })
+      act(() => {
+        result.current.actions.selectMessage?.('a', false)
+      })
+      rerender({ messages: [message('a'), message('b')], pagination: { ...handle, hasOlder: false } })
+      rerender({ messages: [message('a'), message('b')], pagination: { ...handle, hasOlder: false } })
+      expect(cacheValues['chat.selected_message_ids']).toEqual(['b'])
+
+      // The user clicks select-all again after landing: the previous cycle's
+      // exclusions must not leak into this fresh "select everything" intent.
+      act(() => {
+        result.current.actions.toggleSelectAllMessages?.(true)
+      })
+      rerender({ messages: [message('a'), message('b')], pagination: { ...handle, hasOlder: false } })
+
+      expect(cacheValues['chat.selected_message_ids']).toEqual(['a', 'b'])
+      expect(result.current.selection.selectAllState).toBe(true)
+    })
+
     it('drops the deferred select-all when toggled off while loading', () => {
       const { result, handle, rerender } = renderPaginatedController([message('a')], { hasOlder: true })
 
