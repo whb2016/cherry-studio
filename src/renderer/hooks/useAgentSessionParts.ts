@@ -234,12 +234,15 @@ export function useAgentSessionParts(sessionId: string, options: { enabled?: boo
   // Load-all mode (multi-select "select all"): auto-paginate to the oldest
   // page — same pattern as `useTopics({ loadAll: true })`.
   const [loadAllRequested, setLoadAllRequested] = useState(false)
+  const requestLoadAll = useCallback(() => setLoadAllRequested(true), [])
   useEffect(() => {
     setLoadAllRequested(false)
   }, [sessionId])
   useEffect(() => {
     if (enabled && loadAllRequested && hasNext && !isLoading && !isRefreshing) {
-      loadNext()
+      // A failed page fetch would otherwise retry on every render — abandon
+      // the load-all instead; the user can re-trigger select-all.
+      void Promise.resolve(loadNext()).catch(() => setLoadAllRequested(false))
     }
   }, [enabled, loadAllRequested, hasNext, isLoading, isRefreshing, loadNext])
 
@@ -255,7 +258,7 @@ export function useAgentSessionParts(sessionId: string, options: { enabled?: boo
     isLoading: enabled && isLoading,
     hasOlder: hasNext,
     loadOlder: loadNext,
-    loadAllOlder: () => setLoadAllRequested(true),
+    loadAllOlder: requestLoadAll,
     isLoadingAll: enabled && loadAllRequested && hasNext,
     refresh: refreshMessages,
     seedReservedMessages,
