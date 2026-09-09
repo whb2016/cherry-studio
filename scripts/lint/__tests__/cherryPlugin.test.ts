@@ -39,7 +39,7 @@ describe('Cherry Studio Oxlint plugin fixtures', () => {
 
     const diagnostics = (JSON.parse(result.stdout) as OxlintJson).diagnostics
       .map((diagnostic) => ({
-        file: path.relative(fixtureRoot, path.resolve(repoRoot, diagnostic.filename)),
+        file: path.relative(fixtureRoot, path.resolve(repoRoot, diagnostic.filename)).split(path.sep).join('/'),
         line: diagnostic.labels[0]?.span.line,
         rule: diagnostic.code,
         severity: diagnostic.severity,
