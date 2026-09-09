@@ -343,6 +343,12 @@ export const createMockCacheService = (
       notifySubscribers(key)
     }),
 
+    flushPersistCache: vi.fn((): void => {}),
+
+    savePersistCache: vi.fn((): void => {}),
+
+    schedulePersistSave: vi.fn((): void => {}),
+
     // ============ Lifecycle ============
 
     cleanup: vi.fn((): void => {
@@ -514,6 +520,10 @@ export const MockCacheService = {
 
     notifySubscribers(key: string): void {
       return mockCacheService.notifySubscribers(key)
+    }
+
+    flushPersistCache(): void {
+      return (mockCacheService as any).flushPersistCache()
     }
 
     // ============ Lifecycle ============
