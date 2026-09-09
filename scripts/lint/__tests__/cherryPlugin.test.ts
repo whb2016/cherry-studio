@@ -34,7 +34,7 @@ describe('Cherry Studio Oxlint plugin fixtures', () => {
       { cwd: repoRoot, encoding: 'utf8' }
     )
 
-    expect(result.error).toBeUndefined()
+    expect(result.error).toBeNull()
     expect(result.status).toBe(1)
 
     const diagnostics = (JSON.parse(result.stdout) as OxlintJson).diagnostics
