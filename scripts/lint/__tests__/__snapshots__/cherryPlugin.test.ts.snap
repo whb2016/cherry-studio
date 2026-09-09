@@ -17,6 +17,27 @@ exports[`Cherry Studio Oxlint plugin fixtures > accepts positive fixtures and sn
     "severity": "error",
   },
   {
+    "file": "negative/src/main/core/utilityProcess/runtime/ForbiddenImports.ts",
+    "line": 1,
+    "message": "Utility-process child code runs without the main process singletons. Use the child runtime and protocol layer instead; keep host-only code out of the entry graph.",
+    "rule": "cherry(utility-process-boundaries)",
+    "severity": "error",
+  },
+  {
+    "file": "negative/src/main/core/utilityProcess/runtime/ForbiddenImports.ts",
+    "line": 2,
+    "message": "Utility-process child code runs without the main process singletons. Use the child runtime and protocol layer instead; keep host-only code out of the entry graph.",
+    "rule": "cherry(utility-process-boundaries)",
+    "severity": "error",
+  },
+  {
+    "file": "negative/src/main/core/utilityProcess/runtime/ForbiddenImports.ts",
+    "line": 3,
+    "message": "Utility-process child code runs without the main process singletons. Use the child runtime and protocol layer instead; keep host-only code out of the entry graph.",
+    "rule": "cherry(utility-process-boundaries)",
+    "severity": "error",
+  },
+  {
     "file": "negative/src/main/filePath.ts",
     "line": 1,
     "message": "\`as AbsoluteFilePath\` forges the brand. Build it with AbsoluteFilePathSchema.parse(value) instead.",

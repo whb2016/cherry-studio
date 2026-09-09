@@ -109,10 +109,10 @@ Utility processes are Node contexts with Electron's `net` module available, so `
 
 ## Lint boundary
 
-Child code is bundled for a process with no lifecycle container, no logger, and no database. `eslint.config.mjs` fences four globs — `core/utilityProcess/protocol/**`, `core/utilityProcess/runtime/**`, `src/main/**/utilityEntries/**`, and the smoke harness entries — with an `import-x/no-restricted-paths` zone resolved against `tsconfig.node.json`: `@application`, `@logger`, `@data/*`, and any relative path into `core/application`, `core/lifecycle`, `core/logger`, `core/paths`, `data`, `ipc`, or the host half of this module (`host/**`, `UtilityProcessManager`) are judged by where they resolve, not by how they are spelled.
+Child code is bundled for a process with no lifecycle container, no logger, and no database. `oxlint.config.ts` fences four globs — `core/utilityProcess/protocol/**`, `core/utilityProcess/runtime/**`, `src/main/**/utilityEntries/**`, and the smoke harness entries — with the local `cherry/utility-process-boundaries` rule: `@application`, `@logger`, `@data/*`, and any relative path into `core/application`, `core/lifecycle`, `core/logger`, `core/paths`, `data`, `ipc`, or the host half of this module (`host/**`, `UtilityProcessManager`) are judged by their normalized repository path, not by how they are spelled.
 
 That rule only sees direct imports. The transitive case — an innocent helper that pulls in `@logger` three modules down — is caught at build time by `scripts/utilityProcessEntryGuard.ts`, installed by both the production entries build and the smoke harness. To check a boundary by hand:
 
 ```bash
-pnpm exec eslint --stdin --stdin-filename src/main/core/utilityProcess/runtime/probe.ts < probe.ts
+pnpm exec oxlint src/main/core/utilityProcess/runtime/probe.ts
 ```

@@ -30,6 +30,10 @@ const resolveRepoImport = (specifier, fromRelative) => {
 
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
     target = path.posix.resolve(path.posix.dirname(`/${fromRelative}`), specifier).slice(1)
+  } else if (specifier === '@application') {
+    target = 'src/main/core/application'
+  } else if (specifier === '@logger') {
+    target = 'src/main/core/logger'
   } else if (specifier === '@renderer') {
     target = 'src/renderer'
   } else if (specifier.startsWith('@renderer/')) {
@@ -73,6 +77,48 @@ const importVisitors = (check) => ({
 })
 
 const isInside = (candidate, directory) => candidate === directory || candidate.startsWith(`${directory}/`)
+
+const isUtilityProcessChild = (filename) =>
+  isInside(filename, 'src/main/core/utilityProcess/protocol') ||
+  isInside(filename, 'src/main/core/utilityProcess/runtime') ||
+  (filename.startsWith('src/main/') && filename.includes('/utilityEntries/')) ||
+  isInside(filename, 'scripts/utility-process-smoke/harness/utilityEntries')
+
+const UTILITY_PROCESS_FORBIDDEN_IMPORTS = [
+  'src/main/core/application',
+  'src/main/core/lifecycle',
+  'src/main/core/logger',
+  'src/main/core/paths',
+  'src/main/data',
+  'src/main/ipc',
+  'src/main/services/proxy',
+  'src/main/core/utilityProcess/host',
+  'src/main/core/utilityProcess/UtilityProcessManager'
+]
+
+const utilityProcessBoundaries = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      mainOnly:
+        'Utility-process child code runs without the main process singletons. Use the child runtime and protocol layer instead; keep host-only code out of the entry graph.'
+    }
+  },
+  create(context) {
+    const importer = repoRelative(filenameFor(context))
+    if (!isUtilityProcessChild(importer)) return {}
+
+    const check = (node, specifier) => {
+      const target = resolveRepoImport(specifier, importer)
+      if (target && UTILITY_PROCESS_FORBIDDEN_IMPORTS.some((directory) => isInside(target, directory))) {
+        context.report({ node, messageId: 'mainOnly' })
+      }
+    }
+
+    return importVisitors(check)
+  }
+}
 
 const rendererBoundaries = {
   meta: {
@@ -740,6 +786,7 @@ const dynamicReactCloneElement = {
 export const rules = {
   'renderer-boundaries': rendererBoundaries,
   'page-boundaries': pageBoundaries,
+  'utility-process-boundaries': utilityProcessBoundaries,
   'no-export-star': noExportStar,
   'index-no-impl': indexNoImplementation,
   'no-index-tsx': noIndexTsx,

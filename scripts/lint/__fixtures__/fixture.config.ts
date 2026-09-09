@@ -3,6 +3,7 @@ const { defineConfig } = require('oxlint')
 const localRules = [
   'renderer-boundaries',
   'page-boundaries',
+  'utility-process-boundaries',
   'no-export-star',
   'index-no-impl',
   'no-index-tsx',

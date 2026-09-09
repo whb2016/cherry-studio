@@ -216,6 +216,15 @@ module.exports = defineConfig({
       }
     },
     {
+      files: [
+        'src/main/core/utilityProcess/protocol/**/*.ts',
+        'src/main/core/utilityProcess/runtime/**/*.ts',
+        'src/main/**/utilityEntries/**/*.ts',
+        'scripts/utility-process-smoke/harness/utilityEntries/**/*.ts'
+      ],
+      rules: { 'cherry/utility-process-boundaries': 'error' }
+    },
+    {
       files: ['src/**/*.{ts,tsx}'],
       excludeFiles: sourceTests,
       rules: {
