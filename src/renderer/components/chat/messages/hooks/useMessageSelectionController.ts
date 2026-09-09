@@ -3,6 +3,7 @@ import { loggerService } from '@logger'
 import type {
   MessageListActions,
   MessageListItem,
+  MessageListSelectAllPagination,
   MessageListSelectionState,
   SelectAllState
 } from '@renderer/components/chat/messages/types'
@@ -27,12 +28,11 @@ interface UseMessageSelectionControllerParams {
   deleteMessage?: MessageListActions['deleteMessage']
   saveTextFile?: MessageListActions['saveTextFile']
   copyRichContent?: MessageListActions['copyRichContent']
-  /** Whether older message pages are still unloaded (server-side pagination). */
-  hasOlder?: boolean
-  /** Keep auto-paginating until every page is loaded; required to select-all across a paginated topic. */
-  loadAllOlder?: () => void
-  /** True while a requested load-all is still fetching older pages. */
-  isLoadingAll?: boolean
+  /**
+   * Load-all pagination handle; absent = fully loaded (single page), so
+   * select-all applies directly without paging.
+   */
+  selectAllPagination?: MessageListSelectAllPagination
 }
 
 interface MessageSelectionController {
@@ -55,11 +55,13 @@ export function useMessageSelectionController({
   deleteMessage,
   saveTextFile,
   copyRichContent,
-  hasOlder = false,
-  loadAllOlder,
-  isLoadingAll = false
+  selectAllPagination
 }: UseMessageSelectionControllerParams): MessageSelectionController {
   const { t } = useTranslation()
+  const hasOlder = selectAllPagination?.hasOlder ?? false
+  const isLoadingAll = selectAllPagination?.isLoading ?? false
+  const startLoadAll = selectAllPagination?.start
+  const stopLoadAll = selectAllPagination?.stop
   const [isMultiSelectMode, setIsMultiSelectMode] = useCache('chat.multi_select_mode')
   const [selectedMessageIds, setSelectedMessageIds] = useCache('chat.selected_message_ids')
   const latestExportDataRef = useRef({ messages, partsByMessageId, copyRichContent })
@@ -75,12 +77,14 @@ export function useMessageSelectionController({
       setIsMultiSelectMode(enabled)
       if (!enabled) {
         setSelectedMessageIds([])
-        // Abandon any select-all still waiting for pagination — exiting
-        // multi-select must not let the deferred selection apply later.
+        // Abandon any select-all still waiting for pagination and stop the
+        // in-progress paging — exiting multi-select must not let the deferred
+        // selection apply later nor keep fetching pages nobody selected.
         selectAllPendingRef.current = false
+        stopLoadAll?.()
       }
     },
-    [setIsMultiSelectMode, setSelectedMessageIds]
+    [setIsMultiSelectMode, setSelectedMessageIds, stopLoadAll]
   )
 
   useEffect(() => {
@@ -144,17 +148,17 @@ export function useMessageSelectionController({
         setSelectedMessageIds([])
         return
       }
-      if (hasOlder && loadAllOlder) {
+      if (hasOlder && startLoadAll) {
         // Unloaded messages have no resident parts — selecting them now would
         // export empty content. Paginate to the end first; the completion
         // effect below applies the selection once every page is resident.
         selectAllPendingRef.current = true
-        loadAllOlder()
+        startLoadAll()
         return
       }
       performSelectAll()
     },
-    [hasOlder, loadAllOlder, performSelectAll, setSelectedMessageIds]
+    [hasOlder, performSelectAll, setSelectedMessageIds, startLoadAll]
   )
 
   // Load-all finished (no pages left) — apply the deferred select-all.
@@ -163,6 +167,18 @@ export function useMessageSelectionController({
     selectAllPendingRef.current = false
     performSelectAll()
   }, [hasOlder, isLoadingAll, performSelectAll])
+
+  // Load-all abandoned mid-flight (a failed page fetch or an explicit stop):
+  // isLoadingAll falls back to false while pages remain. Drop the pending
+  // intent so a later manual page-through can't silently trigger the stale
+  // select-all.
+  const wasLoadingAllRef = useRef(false)
+  useEffect(() => {
+    if (wasLoadingAllRef.current && !isLoadingAll && hasOlder) {
+      selectAllPendingRef.current = false
+    }
+    wasLoadingAllRef.current = isLoadingAll
+  }, [hasOlder, isLoadingAll])
 
   const resolveMessageIds = useCallback(
     (messageIds?: readonly string[]) => {
