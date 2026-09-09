@@ -325,8 +325,8 @@ describe('resolveDshProviderInjectionFromSnapshot', () => {
 
 describe('assertDshProviderUsable', () => {
   it('defers Cherry Cloud gateway consent until connection materialization', async () => {
-    mocks.getByProviderId.mockResolvedValue(cloudProvider)
-    mocks.getByKey.mockResolvedValue(makeCloudModel())
+    mocks.getByProviderId.mockReturnValue(cloudProvider)
+    mocks.getByKey.mockReturnValue(makeCloudModel())
     mocks.getCurrentConfig.mockReturnValue({ enabled: false })
 
     await expect(assertDshProviderUsable('cherryai-subscription::deepseek-free')).resolves.toBeUndefined()
