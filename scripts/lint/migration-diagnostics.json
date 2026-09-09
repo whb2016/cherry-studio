@@ -314,7 +314,7 @@
           [
             "src/renderer/components/resourceCatalog/selectors/ResourceSelectorShell.tsx",
             472,
-            13,
+            11,
             "react-hooks(exhaustive-deps)",
             "React Hook useCallback has a missing dependency: 'props'"
           ],
@@ -328,7 +328,7 @@
           [
             "src/renderer/components/resourceCatalog/selectors/ResourceSelectorShell.tsx",
             649,
-            11,
+            9,
             "react-hooks(exhaustive-deps)",
             "React Hook useCallback has a missing dependency: 'props'"
           ],
