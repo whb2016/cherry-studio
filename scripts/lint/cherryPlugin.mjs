@@ -709,6 +709,799 @@ const preferZodNamespace = {
   }
 }
 
+const propertyName = (node) => {
+  if (!node) return null
+  if (node.type === 'Identifier' || node.type === 'JSXIdentifier') return node.name
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value
+  return null
+}
+
+const isFunctionNode = (node) =>
+  node?.type === 'FunctionDeclaration' ||
+  node?.type === 'FunctionExpression' ||
+  node?.type === 'ArrowFunctionExpression'
+
+const functionName = (node) => {
+  if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') return node.id?.name ?? null
+  const parent = node.parent
+  if (parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') return parent.id.name
+  if (parent?.type === 'PropertyDefinition' || parent?.type === 'MethodDefinition') return propertyName(parent.key)
+  return null
+}
+
+const isComponentName = (name) => typeof name === 'string' && /^[A-Z]/.test(name)
+
+const createImportTracker = (source) => {
+  const named = new Map()
+  const namespaces = new Set()
+
+  return {
+    record(node) {
+      if (node.source.value !== source) return
+      for (const specifier of node.specifiers) {
+        if (specifier.type === 'ImportSpecifier') {
+          const imported = propertyName(specifier.imported)
+          if (!imported) continue
+          const bindings = named.get(imported) ?? new Set()
+          bindings.add(specifier.local.name)
+          named.set(imported, bindings)
+        } else {
+          namespaces.add(specifier.local.name)
+        }
+      }
+    },
+    importedNames(name) {
+      return named.get(name) ?? new Set()
+    },
+    matchesCall(callee, name) {
+      if (callee.type === 'Identifier') return named.get(name)?.has(callee.name) ?? false
+      return (
+        callee.type === 'MemberExpression' &&
+        callee.object.type === 'Identifier' &&
+        namespaces.has(callee.object.name) &&
+        propertyName(callee.property) === name
+      )
+    },
+    isNamespace(name) {
+      return namespaces.has(name)
+    }
+  }
+}
+
+const isReactComponentClass = (node, react) => {
+  const parent = node.superClass
+  if (!parent) return false
+  if (parent.type === 'Identifier') {
+    return react.importedNames('Component').has(parent.name) || react.importedNames('PureComponent').has(parent.name)
+  }
+  return (
+    parent.type === 'MemberExpression' &&
+    parent.object.type === 'Identifier' &&
+    react.isNamespace(parent.object.name) &&
+    ['Component', 'PureComponent'].includes(propertyName(parent.property))
+  )
+}
+
+const isThisMember = (node, name) =>
+  node?.type === 'MemberExpression' && node.object.type === 'ThisExpression' && propertyName(node.property) === name
+
+const expressionKey = (node) => {
+  if (node?.type === 'Identifier') return node.name
+  if (node?.type !== 'MemberExpression' || node.computed) return null
+  const object = expressionKey(node.object)
+  const property = propertyName(node.property)
+  return object && property ? `${object}.${property}` : null
+}
+
+const assignmentTargetKey = (node) => {
+  let child = node
+  for (let parent = node.parent; parent; child = parent, parent = parent.parent) {
+    if (parent.type === 'VariableDeclarator' && parent.init === child) return expressionKey(parent.id)
+    if (parent.type === 'AssignmentExpression' && parent.right === child) return expressionKey(parent.left)
+    if (parent.type === 'PropertyDefinition' && parent.value === child) return expressionKey(parent.key)
+    if (parent.type === 'BlockStatement' || parent.type === 'Program' || isFunctionNode(parent)) return null
+  }
+  return null
+}
+
+const makeForbiddenImportedCallRule = ({ source, name, message, reportImport = false }) => ({
+  meta: { type: 'problem', schema: [], messages: { forbidden: message } },
+  create(context) {
+    const imports = createImportTracker(source)
+    return {
+      ImportDeclaration(node) {
+        imports.record(node)
+        if (!reportImport || node.source.value !== source) return
+        for (const specifier of node.specifiers) {
+          if (specifier.type === 'ImportSpecifier' && propertyName(specifier.imported) === name) {
+            context.report({ node: specifier, messageId: 'forbidden' })
+          }
+        }
+      },
+      CallExpression(node) {
+        if (imports.matchesCall(node.callee, name)) context.report({ node, messageId: 'forbidden' })
+      }
+    }
+  }
+})
+
+const reactNoAccessStateInSetstate = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: "Do not access 'this.state' within 'setState'. Use the update function instead." }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const classes = []
+    let setStateDepth = 0
+    const enterClass = (node) => classes.push(isReactComponentClass(node, react))
+    return {
+      ImportDeclaration: react.record,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit'() {
+        classes.pop()
+      },
+      ClassExpression: enterClass,
+      'ClassExpression:exit'() {
+        classes.pop()
+      },
+      CallExpression(node) {
+        if (isThisMember(node.callee, 'setState')) setStateDepth += 1
+      },
+      'CallExpression:exit'(node) {
+        if (isThisMember(node.callee, 'setState')) setStateDepth -= 1
+      },
+      MemberExpression(node) {
+        if (classes.at(-1) && setStateDepth > 0 && isThisMember(node, 'state')) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      },
+      VariableDeclarator(node) {
+        if (!classes.at(-1) || setStateDepth === 0 || node.init?.type !== 'ThisExpression') return
+        if (
+          node.id.type === 'ObjectPattern' &&
+          node.id.properties.some((property) => property.type === 'Property' && propertyName(property.key) === 'state')
+        ) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const reactNoContextProvider = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: "In React 19, render '<Context>' as the provider instead of '<Context.Provider>'." }
+  },
+  create(context) {
+    return {
+      JSXOpeningElement(node) {
+        const name = node.name
+        if (
+          name.type === 'JSXMemberExpression' &&
+          propertyName(name.property) === 'Provider' &&
+          isComponentName(propertyName(name.object.property ?? name.object))
+        ) {
+          context.report({ node: name, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const reactNoCreateRef = {
+  meta: { type: 'problem', schema: [], messages: { forbidden: "[Deprecated] Use 'useRef' instead." } },
+  create(context) {
+    const react = createImportTracker('react')
+    const classes = []
+    const enterClass = (node) => classes.push(isReactComponentClass(node, react))
+    return {
+      ImportDeclaration: react.record,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit'() {
+        classes.pop()
+      },
+      ClassExpression: enterClass,
+      'ClassExpression:exit'() {
+        classes.pop()
+      },
+      CallExpression(node) {
+        if (!classes.includes(true) && react.matchesCall(node.callee, 'createRef')) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const reactNoDefaultProps = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: '[Deprecated] Use ES6 default parameters instead.' }
+  },
+  create(context) {
+    const functions = new Map()
+    const recordFunction = (node) => {
+      const name = functionName(node)
+      if (name) functions.set(name, node)
+    }
+    return {
+      FunctionDeclaration: recordFunction,
+      FunctionExpression: recordFunction,
+      ArrowFunctionExpression: recordFunction,
+      AssignmentExpression(node) {
+        const left = node.left
+        if (left.type !== 'MemberExpression' || propertyName(left.property) !== 'defaultProps') return
+        const name = left.object.type === 'Identifier' ? left.object.name : null
+        if (isComponentName(name) && functions.has(name))
+          context.report({ node: left.property, messageId: 'forbidden' })
+      }
+    }
+  }
+}
+
+const reactNoForwardRef = makeForbiddenImportedCallRule({
+  source: 'react',
+  name: 'forwardRef',
+  message: "In React 19, 'forwardRef' is unnecessary. Pass 'ref' as a prop instead."
+})
+
+const reactNoUseContext = makeForbiddenImportedCallRule({
+  source: 'react',
+  name: 'useContext',
+  message: "In React 19, 'use' is preferred over 'useContext'.",
+  reportImport: true
+})
+
+const reactDomNoHydrate = makeForbiddenImportedCallRule({
+  source: 'react-dom',
+  name: 'hydrate',
+  message: "[Deprecated] Use 'hydrateRoot()' instead."
+})
+
+const reactDomNoRender = makeForbiddenImportedCallRule({
+  source: 'react-dom',
+  name: 'render',
+  message: "[Deprecated] Use 'createRoot(node).render()' instead."
+})
+
+const reactDomNoUseFormState = makeForbiddenImportedCallRule({
+  source: 'react-dom',
+  name: 'useFormState',
+  message: "[Deprecated] Use 'useActionState' from 'react' instead."
+})
+
+const reactDomNoFlushSync = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: "Using 'flushSync' is uncommon and can hurt the performance of your app." }
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const callee = node.callee
+        if (
+          (callee.type === 'Identifier' && callee.name === 'flushSync') ||
+          (callee.type === 'MemberExpression' && propertyName(callee.property) === 'flushSync')
+        ) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const reactNoChildrenMethods = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: '`React.Children.{{method}}` should not be used.' }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const forbidden = new Set(['count', 'forEach', 'map', 'only'])
+    return {
+      ImportDeclaration: react.record,
+      CallExpression(node) {
+        const callee = node.callee
+        if (callee.type !== 'MemberExpression') return
+        const method = propertyName(callee.property)
+        if (!forbidden.has(method)) return
+        const object = callee.object
+        const isNamedChildren = object.type === 'Identifier' && react.importedNames('Children').has(object.name)
+        const isNamespacedChildren =
+          object.type === 'MemberExpression' &&
+          object.object.type === 'Identifier' &&
+          react.isNamespace(object.object.name) &&
+          propertyName(object.property) === 'Children'
+        if (isNamedChildren || isNamespacedChildren) {
+          context.report({ node, messageId: 'forbidden', data: { method } })
+        }
+      }
+    }
+  }
+}
+
+const reactNoImplicitKey = {
+  meta: { type: 'problem', schema: [], messages: { forbidden: "Do not use implicit 'key' props." } },
+  create(context) {
+    const keyedObjects = new Set()
+    const objectHasKey = (node) =>
+      node?.type === 'ObjectExpression' &&
+      node.properties.some((property) => property.type === 'Property' && propertyName(property.key) === 'key')
+    return {
+      VariableDeclarator(node) {
+        if (node.id.type === 'Identifier' && objectHasKey(node.init)) keyedObjects.add(node.id.name)
+      },
+      JSXSpreadAttribute(node) {
+        if (
+          objectHasKey(node.argument) ||
+          (node.argument.type === 'Identifier' && keyedObjects.has(node.argument.name))
+        ) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const reactNoMisusedCaptureOwnerStack = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      import: "Use a React namespace import for 'captureOwnerStack'.",
+      guard: "Call 'captureOwnerStack' only inside an explicit non-production guard."
+    }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const isDevelopmentGuard = (node) => {
+      if (node.type !== 'IfStatement' || node.test.type !== 'BinaryExpression' || node.test.operator !== '!==')
+        return false
+      const { left, right } = node.test
+      return (
+        right.type === 'Literal' &&
+        right.value === 'production' &&
+        left.type === 'MemberExpression' &&
+        propertyName(left.property) === 'NODE_ENV' &&
+        left.object.type === 'MemberExpression' &&
+        left.object.object.type === 'Identifier' &&
+        left.object.object.name === 'process' &&
+        propertyName(left.object.property) === 'env'
+      )
+    }
+    const isGuarded = (node) => {
+      for (let parent = node.parent; parent; parent = parent.parent) if (isDevelopmentGuard(parent)) return true
+      return false
+    }
+    return {
+      ImportDeclaration(node) {
+        react.record(node)
+        if (node.source.value !== 'react') return
+        for (const specifier of node.specifiers) {
+          if (specifier.type === 'ImportSpecifier' && propertyName(specifier.imported) === 'captureOwnerStack') {
+            context.report({ node: specifier, messageId: 'import' })
+          }
+        }
+      },
+      CallExpression(node) {
+        if (react.matchesCall(node.callee, 'captureOwnerStack') && !isGuarded(node)) {
+          context.report({ node, messageId: 'guard' })
+        }
+      }
+    }
+  }
+}
+
+const reactContextName = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { invalid: "A context name must be a component name with the suffix 'Context'." }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    return {
+      ImportDeclaration: react.record,
+      CallExpression(node) {
+        if (!react.matchesCall(node.callee, 'createContext')) return
+        const parent = node.parent
+        let target = null
+        if (parent?.type === 'VariableDeclarator') target = parent.id
+        else if (parent?.type === 'AssignmentExpression') target = parent.left
+        else if (parent?.type === 'Property') target = parent.key
+        const name = target?.type === 'MemberExpression' ? propertyName(target.property) : propertyName(target)
+        if (name && /^[A-Z][A-Za-z0-9]*Context$/.test(name)) return
+        if (target) context.report({ node: target, messageId: 'invalid' })
+      }
+    }
+  }
+}
+
+const reactNoNestedLazyComponentDeclarations = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { forbidden: 'Declare lazy components at the top level of the module.' }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const isInsideComponent = (node) => {
+      for (let parent = node.parent; parent; parent = parent.parent) {
+        if (isFunctionNode(parent)) {
+          const name = functionName(parent)
+          return isComponentName(name) || /^use[A-Z0-9]/.test(name ?? '')
+        }
+        if (
+          (parent.type === 'ClassDeclaration' || parent.type === 'ClassExpression') &&
+          isReactComponentClass(parent, react)
+        ) {
+          return true
+        }
+      }
+      return false
+    }
+    return {
+      ImportDeclaration: react.record,
+      CallExpression(node) {
+        if (react.matchesCall(node.callee, 'lazy') && isInsideComponent(node)) {
+          context.report({ node, messageId: 'forbidden' })
+        }
+      }
+    }
+  }
+}
+
+const REACT_LIFECYCLE_MEMBERS = new Set([
+  'componentDidCatch',
+  'componentDidMount',
+  'componentDidUpdate',
+  'componentWillMount',
+  'componentWillReceiveProps',
+  'componentWillUnmount',
+  'componentWillUpdate',
+  'constructor',
+  'getSnapshotBeforeUpdate',
+  'render',
+  'shouldComponentUpdate',
+  'state',
+  'UNSAFE_componentWillMount',
+  'UNSAFE_componentWillReceiveProps',
+  'UNSAFE_componentWillUpdate'
+])
+
+const reactNoUnusedClassComponentMembers = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { unused: "Unused method or property '{{member}}' of class '{{className}}'." }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const classes = []
+    const members = []
+    const enterClass = (node) => {
+      classes.push(
+        isReactComponentClass(node, react)
+          ? { name: node.id?.name ?? 'Component', definitions: new Map(), usages: new Set() }
+          : null
+      )
+    }
+    const exitClass = () => {
+      const current = classes.pop()
+      if (!current) return
+      for (const [member, node] of current.definitions) {
+        if (!REACT_LIFECYCLE_MEMBERS.has(member) && !current.usages.has(member)) {
+          context.report({ node, messageId: 'unused', data: { member, className: current.name } })
+        }
+      }
+    }
+    const enterMember = (node) => {
+      members.push(node)
+      const current = classes.at(-1)
+      const name = propertyName(node.key)
+      if (current && !node.static && name) current.definitions.set(name, node.key)
+    }
+    const exitMember = () => members.pop()
+    return {
+      ImportDeclaration: react.record,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit': exitClass,
+      ClassExpression: enterClass,
+      'ClassExpression:exit': exitClass,
+      MethodDefinition: enterMember,
+      'MethodDefinition:exit': exitMember,
+      PropertyDefinition: enterMember,
+      'PropertyDefinition:exit': exitMember,
+      MemberExpression(node) {
+        const current = classes.at(-1)
+        const member = members.at(-1)
+        if (!current || member?.static || node.object.type !== 'ThisExpression') return
+        const name = propertyName(node.property)
+        if (!name) return
+        if (node.parent?.type === 'AssignmentExpression' && node.parent.left === node) {
+          current.definitions.set(name, node.property)
+        } else {
+          current.usages.add(name)
+        }
+      },
+      VariableDeclarator(node) {
+        const current = classes.at(-1)
+        const member = members.at(-1)
+        if (!current || member?.static || node.init?.type !== 'ThisExpression' || node.id.type !== 'ObjectPattern')
+          return
+        for (const property of node.id.properties) {
+          if (property.type === 'Property') {
+            const name = propertyName(property.key)
+            if (name) current.usages.add(name)
+          }
+        }
+      }
+    }
+  }
+}
+
+const reactNoUnusedState = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { unused: "Unused class component state in '{{className}}'." }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const classes = []
+    const methods = []
+    const enterClass = (node) => {
+      classes.push(
+        isReactComponentClass(node, react)
+          ? { name: node.id?.name ?? 'Component', definition: null, used: false }
+          : null
+      )
+    }
+    const exitClass = () => {
+      const current = classes.pop()
+      if (current?.definition && !current.used) {
+        context.report({ node: current.definition, messageId: 'unused', data: { className: current.name } })
+      }
+    }
+    const enterMember = (node) => {
+      const name = propertyName(node.key)
+      methods.push(name)
+      if (name === 'state' && classes.at(-1) && !node.static) classes.at(-1).definition = node.key
+    }
+    return {
+      ImportDeclaration: react.record,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit': exitClass,
+      ClassExpression: enterClass,
+      'ClassExpression:exit': exitClass,
+      MethodDefinition: enterMember,
+      'MethodDefinition:exit'() {
+        methods.pop()
+      },
+      PropertyDefinition: enterMember,
+      'PropertyDefinition:exit'() {
+        methods.pop()
+      },
+      AssignmentExpression(node) {
+        const current = classes.at(-1)
+        if (current && methods.at(-1) === 'constructor' && isThisMember(node.left, 'state')) {
+          current.definition = node.left
+        }
+      },
+      MemberExpression(node) {
+        const current = classes.at(-1)
+        if (!current || methods.at(-1) === 'constructor' || !isThisMember(node, 'state')) return
+        if (node.parent?.type === 'AssignmentExpression' && node.parent.left === node) return
+        current.used = true
+      },
+      VariableDeclarator(node) {
+        const current = classes.at(-1)
+        if (
+          current &&
+          methods.at(-1) !== 'constructor' &&
+          node.init?.type === 'ThisExpression' &&
+          node.id.type === 'ObjectPattern' &&
+          node.id.properties.some((property) => property.type === 'Property' && propertyName(property.key) === 'state')
+        ) {
+          current.used = true
+        }
+      }
+    }
+  }
+}
+
+const callPropertyName = (node) => {
+  const callee = node.callee
+  if (callee.type === 'Identifier') return callee.name
+  if (callee.type === 'MemberExpression') return propertyName(callee.property)
+  return null
+}
+
+const effectCallback = (node) => {
+  const call = node.parent
+  return (
+    call?.type === 'CallExpression' &&
+    call.arguments.includes(node) &&
+    ['useEffect', 'useInsertionEffect', 'useLayoutEffect'].includes(callPropertyName(call))
+  )
+}
+
+const reactNoLeakedInterval = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      id: "A 'setInterval' must be assigned to a variable for proper cleanup.",
+      cleanup: "A 'setInterval' created in an effect must be cleared with 'clearInterval'.",
+      unmount: "A 'setInterval' created in 'componentDidMount' must be cleared in 'componentWillUnmount'."
+    }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const functions = []
+    const classes = []
+    const methods = []
+    const enterFunction = (node) =>
+      functions.push(effectCallback(node) ? { intervals: new Map(), clears: new Set() } : null)
+    const exitFunction = () => {
+      const current = functions.pop()
+      if (!current) return
+      for (const [key, node] of current.intervals) {
+        if (!current.clears.has(key)) context.report({ node, messageId: 'cleanup' })
+      }
+    }
+    const enterClass = (node) => {
+      classes.push(isReactComponentClass(node, react) ? { intervals: new Map(), clears: new Set() } : null)
+    }
+    const exitClass = () => {
+      const current = classes.pop()
+      if (!current) return
+      for (const [key, node] of current.intervals) {
+        if (!current.clears.has(key)) context.report({ node, messageId: 'unmount' })
+      }
+    }
+    const enterMethod = (node) => methods.push(propertyName(node.key))
+    const recordSet = (node, target) => {
+      const key = assignmentTargetKey(node)
+      if (!key) context.report({ node, messageId: 'id' })
+      else target.intervals.set(key, node)
+    }
+    return {
+      ImportDeclaration: react.record,
+      FunctionDeclaration: enterFunction,
+      'FunctionDeclaration:exit': exitFunction,
+      FunctionExpression: enterFunction,
+      'FunctionExpression:exit': exitFunction,
+      ArrowFunctionExpression: enterFunction,
+      'ArrowFunctionExpression:exit': exitFunction,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit': exitClass,
+      ClassExpression: enterClass,
+      'ClassExpression:exit': exitClass,
+      MethodDefinition: enterMethod,
+      'MethodDefinition:exit'() {
+        methods.pop()
+      },
+      PropertyDefinition: enterMethod,
+      'PropertyDefinition:exit'() {
+        methods.pop()
+      },
+      CallExpression(node) {
+        const name = callPropertyName(node)
+        const effect = functions.findLast(Boolean)
+        const component = classes.at(-1)
+        if (name === 'setInterval') {
+          if (effect) recordSet(node, effect)
+          else if (component && methods.at(-1) === 'componentDidMount') recordSet(node, component)
+        } else if (name === 'clearInterval') {
+          const key = expressionKey(node.arguments[0])
+          if (!key) return
+          if (effect) effect.clears.add(key)
+          if (component && methods.at(-1) === 'componentWillUnmount') component.clears.add(key)
+        }
+      }
+    }
+  }
+}
+
+const reactNoLeakedResizeObserver = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      floating: "A 'ResizeObserver' created in an effect must be assigned for cleanup.",
+      cleanup: "A 'ResizeObserver' created in an effect must be disconnected or unobserved in cleanup.",
+      unmount: "A 'ResizeObserver' created in 'componentDidMount' must be disconnected in 'componentWillUnmount'."
+    }
+  },
+  create(context) {
+    const react = createImportTracker('react')
+    const functions = []
+    const classes = []
+    const methods = []
+    const createFrame = () => ({
+      observers: new Map(),
+      observed: new Map(),
+      unobserved: new Map(),
+      disconnected: new Set()
+    })
+    const enterFunction = (node) => functions.push(effectCallback(node) ? createFrame() : null)
+    const reportFrame = (current, messageId) => {
+      if (!current) return
+      for (const [key, node] of current.observers) {
+        if (current.disconnected.has(key)) continue
+        const observed = current.observed.get(key) ?? new Set()
+        const unobserved = current.unobserved.get(key) ?? new Set()
+        if ([...observed].some((target) => !unobserved.has(target))) {
+          context.report({ node, messageId })
+        }
+      }
+    }
+    const exitFunction = () => reportFrame(functions.pop(), 'cleanup')
+    const enterClass = (node) => classes.push(isReactComponentClass(node, react) ? createFrame() : null)
+    const exitClass = () => reportFrame(classes.pop(), 'unmount')
+    const addTarget = (map, observer, target) => {
+      if (!observer || !target) return
+      const targets = map.get(observer) ?? new Set()
+      targets.add(target)
+      map.set(observer, targets)
+    }
+    return {
+      ImportDeclaration: react.record,
+      FunctionDeclaration: enterFunction,
+      'FunctionDeclaration:exit': exitFunction,
+      FunctionExpression: enterFunction,
+      'FunctionExpression:exit': exitFunction,
+      ArrowFunctionExpression: enterFunction,
+      'ArrowFunctionExpression:exit': exitFunction,
+      ClassDeclaration: enterClass,
+      'ClassDeclaration:exit': exitClass,
+      ClassExpression: enterClass,
+      'ClassExpression:exit': exitClass,
+      MethodDefinition(node) {
+        methods.push(propertyName(node.key))
+      },
+      'MethodDefinition:exit'() {
+        methods.pop()
+      },
+      PropertyDefinition(node) {
+        methods.push(propertyName(node.key))
+      },
+      'PropertyDefinition:exit'() {
+        methods.pop()
+      },
+      NewExpression(node) {
+        const current = functions.findLast(Boolean) ?? (methods.at(-1) === 'componentDidMount' ? classes.at(-1) : null)
+        if (!current || node.callee.type !== 'Identifier' || node.callee.name !== 'ResizeObserver') return
+        const key = assignmentTargetKey(node)
+        if (!key) context.report({ node, messageId: 'floating' })
+        else current.observers.set(key, node)
+      },
+      CallExpression(node) {
+        const effect = functions.findLast(Boolean)
+        const component = classes.at(-1)
+        const current =
+          effect ??
+          (component && ['componentDidMount', 'componentWillUnmount'].includes(methods.at(-1)) ? component : null)
+        const callee = node.callee
+        if (!current || callee.type !== 'MemberExpression') return
+        const observer = expressionKey(callee.object)
+        const method = propertyName(callee.property)
+        if (method === 'disconnect' && observer) current.disconnected.add(observer)
+        else if (method === 'observe') addTarget(current.observed, observer, expressionKey(node.arguments[0]))
+        else if (method === 'unobserve') addTarget(current.unobserved, observer, expressionKey(node.arguments[0]))
+      }
+    }
+  }
+}
+
 const noPropTypes = {
   meta: {
     type: 'problem',
@@ -805,6 +1598,25 @@ export const rules = {
   'valid-schema-key': validSchemaKey,
   'prefer-zod-namespace': preferZodNamespace,
   'no-prop-types': noPropTypes,
+  'react-context-name': reactContextName,
+  'react-dom-no-flush-sync': reactDomNoFlushSync,
+  'react-dom-no-hydrate': reactDomNoHydrate,
+  'react-dom-no-render': reactDomNoRender,
+  'react-dom-no-use-form-state': reactDomNoUseFormState,
+  'react-no-access-state-in-setstate': reactNoAccessStateInSetstate,
+  'react-no-children-methods': reactNoChildrenMethods,
+  'react-no-context-provider': reactNoContextProvider,
+  'react-no-create-ref': reactNoCreateRef,
+  'react-no-default-props': reactNoDefaultProps,
+  'react-no-forward-ref': reactNoForwardRef,
+  'react-no-implicit-key': reactNoImplicitKey,
+  'react-no-leaked-interval': reactNoLeakedInterval,
+  'react-no-leaked-resize-observer': reactNoLeakedResizeObserver,
+  'react-no-misused-capture-owner-stack': reactNoMisusedCaptureOwnerStack,
+  'react-no-nested-lazy-component-declarations': reactNoNestedLazyComponentDeclarations,
+  'react-no-unused-class-component-members': reactNoUnusedClassComponentMembers,
+  'react-no-unused-state': reactNoUnusedState,
+  'react-no-use-context': reactNoUseContext,
   'dynamic-react-children-map': dynamicReactChildrenMap,
   'dynamic-react-clone-element': dynamicReactCloneElement
 }

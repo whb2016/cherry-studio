@@ -5002,6 +5002,7 @@ describe('ComposerSurface', () => {
     let ctrlEnterHandled = false
     act(() => {
       mocks.preferences['chat.input.send_message_shortcut'] = 'Ctrl+Enter'
+      // oxlint-disable-next-line cherry/react-dom-no-flush-sync -- Simulates the post-commit window before passive effects flush.
       flushSync(() => {
         rerender(<ComposerSurface {...baseProps} onSendDraft={onSendDraft} />)
       })
@@ -5027,6 +5028,7 @@ describe('ComposerSurface', () => {
 
     let handled = false
     act(() => {
+      // oxlint-disable-next-line cherry/react-dom-no-flush-sync -- Simulates the post-commit window before passive effects flush.
       flushSync(() => {
         rerender(<ComposerSurface {...baseProps} onSendDraft={nextSendDraft} />)
       })

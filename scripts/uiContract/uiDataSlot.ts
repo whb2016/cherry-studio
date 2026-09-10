@@ -107,7 +107,7 @@ export function UiDataSlot({
   // slot implementations may forward behavior props without forwarding data-ui.
   if (Object.keys(slotProps).length === 0 && ref == null) return children
   const slotDataUi = typeof slotProps['data-ui'] === 'string' ? slotProps['data-ui'] : ''
-  // oxlint-disable-next-line react/no-react-children -- a slot must validate its single child, like Radix's Slot.
+  // oxlint-disable-next-line cherry/react-no-children-methods -- a slot must validate its single child, like Radix's Slot.
   if (Children.count(children) !== 1 || !isValidElement(children)) {
     // Verbatim Radix Slot semantics: empty children render as-is; anything else
     // that cannot slot is an authoring error and must throw, never vanish.
